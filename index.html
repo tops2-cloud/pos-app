@@ -70,7 +70,17 @@
       <p id="sPpStatus" class="small"></p>
       <label>ชื่อบัญชีที่แสดงบนบิล (ไม่บังคับ)<input id="sPpName" autocomplete="off" placeholder="เช่น นายสมชาย ใจดี"></label>
       <label>บัญชีธนาคาร สำรองไว้แสดงบนบิล (ไม่บังคับ)<input id="sBank" autocomplete="off" placeholder="เช่น กสิกร 123-4-56789-0"></label>
-      <div class="row gap wrap"><button id="btnPpTest" class="btn small">ทดสอบ QR</button></div>
+      <label>หรือใช้ QR ร้านค้าที่ธนาคารให้มา (แม่มณี / K SHOP / Thai QR ฯลฯ)
+        <textarea id="sMerchantQR" rows="3" autocomplete="off" spellcheck="false" placeholder="วางข้อความที่อ่านได้จาก QR (ขึ้นต้นด้วย 000201…) หรือกดสแกน / เลือกรูปด้านล่าง"></textarea></label>
+      <p id="sMqStatus" class="small"></p>
+      <div class="row gap wrap">
+        <button id="btnMqScan" class="btn small">📷 สแกน QR ร้าน</button>
+        <button id="btnMqImg" class="btn small">🖼️ เลือกรูป QR</button>
+        <button id="btnMqClear" class="btn small">เลิกใช้</button>
+        <button id="btnPpTest" class="btn small">ทดสอบ QR</button>
+      </div>
+      <input type="file" id="fileMq" accept="image/*" hidden>
+      <div id="qrFileReader" hidden></div>
       <p class="muted small">QR พร้อมเพย์ต้องใช้เบอร์มือถือหรือเลขบัตรที่ผูกพร้อมเพย์ไว้แล้ว เลขบัญชีธนาคารสร้าง QR ไม่ได้ จะแสดงเป็นข้อความให้ลูกค้าโอนเองแทน · แอพตรวจไม่ได้ว่าเงินเข้าแล้ว ต้องดูแจ้งเตือนจากแอพธนาคารก่อนกด "รับโอนแล้ว"</p>
     </div>
     <div class="card">
@@ -119,7 +129,7 @@
       <h3>อื่น ๆ</h3>
       <button id="btnClearSales" class="btn danger">ลบประวัติการขายทั้งหมด</button>
     </div>
-    <p class="muted small center">POS v1.2</p>
+    <p class="muted small center">POS v1.3</p>
   </section>
 </main>
 

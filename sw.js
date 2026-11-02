@@ -1,5 +1,5 @@
 // Network-first: always try the latest version, fall back to cache when offline.
-const CACHE = 'pos-v3';
+const CACHE = 'pos-v4';
 const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'printer.js', 'promptpay.js', 'manifest.json', 'vendor/html5-qrcode.min.js', 'vendor/qrcode-generator.js', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

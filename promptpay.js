@@ -83,3 +83,45 @@ function qrCanvas(text, size = 260) {
   drawQR(c.getContext('2d'), text, 0, 0, c.width);
   return c;
 }
+
+/* ---------- QR ร้านค้าที่ธนาคารออกให้ (Thai QR / แม่มณี / K SHOP ฯลฯ) ----------
+   เอาข้อความที่อ่านได้จาก QR เดิมมาเติมยอดเงิน (tag 54) แล้วคำนวณ CRC ใหม่ */
+function emvParse(s) {
+  s = String(s || '').trim();
+  const out = []; let i = 0;
+  while (i < s.length) {
+    const tag = s.substr(i, 2), len = parseInt(s.substr(i + 2, 2), 10);
+    if (!/^\d\d$/.test(tag) || isNaN(len) || i + 4 + len > s.length) return null;
+    out.push([tag, s.substr(i + 4, len)]); i += 4 + len;
+  }
+  return out;
+}
+/** ตรวจ QR ร้านค้า → {name, city, kind} หรือ {error} */
+function merchantQRInfo(raw) {
+  const s = String(raw || '').replace(/\s+/g, '');
+  if (!s) return null;
+  const f = emvParse(s);
+  if (!f || !s.startsWith('000201')) return { error: 'ไม่ใช่ข้อความ QR รับเงิน (ต้องขึ้นต้นด้วย 000201)' };
+  const crc = f.find(x => x[0] === '63');
+  if (!crc || f[f.length - 1][0] !== '63' || ppCRC16(s.slice(0, -4)) !== crc[1].toUpperCase()) return { error: 'ข้อความไม่ครบหรือผิด (รหัสตรวจสอบไม่ตรง) ลองคัดลอกใหม่ทั้งหมด' };
+  const get = t => (f.find(x => x[0] === t) || [])[1] || '';
+  if (get('53') && get('53') !== '764') return { error: 'QR นี้ไม่ใช่สกุลเงินบาท' };
+  const kind = get('30') ? 'merchant' : get('29') ? 'promptpay' : '';
+  if (!kind) return { error: 'QR นี้ไม่ใช่ Thai QR / พร้อมเพย์' };
+  return { s, name: get('59'), city: get('60'), kind };
+}
+/** ใส่ยอดเงินลงใน QR ร้านค้า */
+function merchantQRWithAmount(raw, amount) {
+  const info = merchantQRInfo(raw);
+  if (!info || info.error) throw new Error(info?.error || 'ไม่มี QR ร้านค้า');
+  const amt = +amount > 0 ? Math.round(+amount * 100) / 100 : 0;
+  const f = emvParse(info.s).filter(([t]) => t !== '54' && t !== '63');
+  const pi = f.findIndex(([t]) => t === '01');
+  if (pi >= 0) f[pi][1] = amt ? '12' : '11';
+  if (amt) {
+    const at = f.findIndex(([t]) => +t > 54);
+    f.splice(at < 0 ? f.length : at, 0, ['54', amt.toFixed(2)]);
+  }
+  const body = f.map(([t, v]) => ppTLV(t, v)).join('') + '6304';
+  return body + ppCRC16(body);
+}

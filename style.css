@@ -10,11 +10,11 @@
 html,body{margin:0;background:var(--bg);color:var(--text);font-family:"Sarabun","Noto Sans Thai",system-ui,-apple-system,sans-serif;font-size:16px;-webkit-tap-highlight-color:transparent}
 body{padding-bottom:calc(var(--nav-h) + env(safe-area-inset-bottom))}
 body.selling{padding-bottom:calc(var(--nav-h) + var(--bill-h) + env(safe-area-inset-bottom))}
-button,input,select{font:inherit;color:inherit}
-input,select{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-width:0}
+button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-width:0}
 input:focus,select:focus{outline:2px solid var(--pri-2);border-color:transparent}
 label{display:block;margin:10px 0;font-size:.92rem;color:var(--muted)}
-label input,label select{margin-top:4px;color:var(--text)}
+label input,label select,label textarea{margin-top:4px;color:var(--text)}
 label.inline{display:flex;align-items:center;gap:6px;margin:0}
 h3{margin:4px 0 10px;font-size:1.1rem}
 .hidden{display:none!important}
@@ -134,3 +134,5 @@ label.check input{width:22px;height:22px;margin:0}
   #printArea{display:block!important}
   #printArea img{display:block}
 }
+
+textarea{font-family:ui-monospace,monospace!important;font-size:.8rem!important;word-break:break-all;resize:vertical}

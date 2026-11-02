@@ -222,11 +222,20 @@ function openDiscount({ title, base, cur, onSave }) {
 /* ===================== เช็คบิล / ชำระเงิน / ใบเสร็จ ===================== */
 const isUnpaid = s => s.status === 'unpaid';
 const methodLabel = s => isUnpaid(s) ? 'ค้างชำระ' : s.method === 'cash' ? 'เงินสด' : 'โอน / พร้อมเพย์';
-const ppReady = () => !!ppParseId(settings.ppId);
+/** QR ร้านค้าที่ธนาคารให้มา (ถ้าตั้งไว้และถูกต้อง จะใช้แทนพร้อมเพย์) */
+const merchantInfo = () => { const i = merchantQRInfo(settings.merchantQR); return i && !i.error ? i : null; };
+const ppReady = () => !!merchantInfo() || !!ppParseId(settings.ppId);
 function billQRText(s) {
   if (!ppReady() || !(s.total > 0)) return '';
-  try { return promptPayPayload(settings.ppId, s.total); } catch (e) { return ''; }
+  try { return merchantInfo() ? merchantQRWithAmount(settings.merchantQR, s.total) : promptPayPayload(settings.ppId, s.total); }
+  catch (e) { return ''; }
 }
+/** ชื่อผู้รับเงินที่แสดงใต้ QR */
+function payWho() {
+  const m = merchantInfo();
+  return (m ? [settings.ppName || m.name, m.city] : [settings.ppName, ppMask(settings.ppId)]).filter(Boolean).join(' · ');
+}
+const payScanLabel = () => merchantInfo() ? 'สแกนจ่ายด้วยแอพธนาคาร · Thai QR' : 'สแกนจ่ายด้วยแอพธนาคาร · พร้อมเพย์';
 
 /** บิลร่างจากตะกร้า (ยังไม่บันทึก) */
 function draftBill() {
@@ -259,12 +268,12 @@ function openBill(s, isNew) {
   const qrBlock = !(s.total > 0) ? '' : qrText
     ? `<div class="qr-box"><div id="qrHere"></div>
         <div class="qr-amt">฿${money(s.total)}</div>
-        <div class="small">สแกนจ่ายด้วยแอพธนาคาร · พร้อมเพย์</div>
-        <div class="muted small">${esc(settings.ppName || '')}${settings.ppName ? ' · ' : ''}${esc(ppMask(settings.ppId))}</div>
+        <div class="small">${payScanLabel()}</div>
+        <div class="muted small">${esc(payWho())}</div>
         ${settings.bankText ? `<div class="muted small">หรือโอนเข้า ${esc(settings.bankText)}</div>` : ''}</div>`
     : `<div class="qr-box off">
         ${settings.bankText ? `<div class="small">โอนเข้า <b>${esc(settings.bankText)}</b></div>` : ''}
-        <div class="small">ยังไม่ได้ตั้งค่าพร้อมเพย์ จึงยังสร้าง QR รับเงินไม่ได้</div>
+        <div class="small">ยังไม่ได้ตั้งค่าพร้อมเพย์ / QR ร้านค้า จึงยังสร้าง QR รับเงินไม่ได้</div>
         <button class="btn small" id="bGoSettings">ตั้งค่าพร้อมเพย์</button></div>`;
   showModal(`<div class="row between"><h3>เช็คบิล</h3><span class="badge warn">ยังไม่ชำระ</span></div>
     <div class="pay-total">฿${money(s.total)}</div>
@@ -596,7 +605,8 @@ async function renderSettings() {
   $('#sPpId').value = settings.ppId || '';
   $('#sPpName').value = settings.ppName || '';
   $('#sBank').value = settings.bankText || '';
-  renderPpStatus();
+  $('#sMerchantQR').value = settings.merchantQR || '';
+  renderPpStatus(); renderMqStatus();
   $('#sPaper').value = String(settings.paperMM === 80 ? 80 : 58);
   $('#sFooter').value = settings.receiptFooter || '';
   $('#sAutoPrint').checked = !!settings.autoPrint;
@@ -608,10 +618,32 @@ async function renderSettings() {
   try { const e = await navigator.storage?.estimate?.(); if (e) est = ` · ใช้พื้นที่ ~${(e.usage / 1048576).toFixed(1)} MB`; } catch (e) { /* ignore */ }
   $('#sStats').textContent = `มีบิลในเครื่อง ${all.length} บิล${all.length ? ` · เก่าสุด ${fmtDate(oldest)}` : ''} · สินค้า ${products.length} รายการ${est}`;
 }
+function renderMqStatus(typed) {
+  const v = typed !== undefined ? typed : settings.merchantQR;
+  const i = merchantQRInfo(v);
+  $('#sMqStatus').innerHTML = !i ? '<span class="muted">ไม่ได้ใช้ (ใช้พร้อมเพย์ด้านบนแทน)</span>'
+    : i.error ? `<span class="badge warn">ใช้ไม่ได้</span> ${esc(i.error)}`
+    : `<span class="badge ok">ใช้ได้</span> ${i.kind === 'merchant' ? 'QR ร้านค้า' : 'QR พร้อมเพย์'}${i.name ? ` · ${esc(i.name)}` : ''}${i.city ? ` · ${esc(i.city)}` : ''}<br><span class="muted">หน้าเช็คบิลจะใช้ QR นี้ (เติมยอดเงินให้อัตโนมัติ) แทนเบอร์พร้อมเพย์</span>`;
+}
+async function setMerchantQR(text) {
+  const v = String(text || '').replace(/\s+/g, '');
+  const i = merchantQRInfo(v);
+  if (i?.error) { $('#sMerchantQR').value = v; renderMqStatus(v); return toast(i.error, 4500); }
+  settings.merchantQR = v; await saveSettings();
+  $('#sMerchantQR').value = v; renderMqStatus(); renderPpStatus();
+  toast(v ? `ใช้ QR ร้านค้า${i.name ? ' ' + i.name : ''} แล้ว` : 'ยกเลิก QR ร้านค้าแล้ว');
+}
+async function readQRImage(file) {
+  if (!window.Html5Qrcode) return toast('ตัวอ่าน QR ยังโหลดไม่เสร็จ ลองใหม่อีกครั้ง');
+  const r = new Html5Qrcode('qrFileReader', { verbose: false });
+  try { await setMerchantQR(await r.scanFile(file, false)); }
+  catch (e) { toast('อ่าน QR จากรูปไม่ได้ ลองครอปให้เห็น QR ชัด ๆ', 4000); }
+  finally { try { r.clear(); } catch (e) { /* ignore */ } }
+}
 function renderPpStatus(typed) {
   const v = typed !== undefined ? typed : settings.ppId;
   const p = ppParseId(v);
-  $('#sPpStatus').innerHTML = !String(v || '').trim() ? '<span class="badge warn">ยังไม่ได้ตั้งค่า</span> หน้าเช็คบิลจะยังไม่มี QR'
+  $('#sPpStatus').innerHTML = !String(v || '').trim() ? (merchantInfo() ? '<span class="muted">ไม่ได้ใช้ (ใช้ QR ร้านค้าด้านล่างแทน)</span>' : '<span class="badge warn">ยังไม่ได้ตั้งค่า</span> หน้าเช็คบิลจะยังไม่มี QR')
     : p ? `<span class="badge ok">ใช้ได้</span> ${PP_TYPE_LABEL[p.type]}${typed !== undefined && p.id !== settings.ppId ? ' · กดออกจากช่องเพื่อบันทึก' : ''}`
     : '<span class="badge warn">ยังไม่ถูกต้อง</span> เบอร์มือถือ 10 หลัก หรือเลขบัตร 13 หลัก';
 }
@@ -729,15 +761,21 @@ function bind() {
   };
   $('#sPpId').oninput = e => renderPpStatus(e.target.value);
   $('#sPpName').onchange = async e => { settings.ppName = e.target.value.trim(); await saveSettings(); renderPpStatus(); toast('บันทึกแล้ว'); };
+  $('#sMerchantQR').onchange = e => setMerchantQR(e.target.value);
+  $('#sMerchantQR').oninput = e => renderMqStatus(e.target.value);
+  $('#btnMqScan').onclick = () => openScanner(t => setMerchantQR(t), { title: 'สแกน QR รับเงินของร้าน' });
+  $('#btnMqImg').onclick = () => $('#fileMq').click();
+  $('#fileMq').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) readQRImage(f); };
+  $('#btnMqClear').onclick = () => { if (settings.merchantQR && confirm('เลิกใช้ QR ร้านค้านี้?')) setMerchantQR(''); };
   $('#sBank').onchange = async e => { settings.bankText = e.target.value.trim(); await saveSettings(); toast('บันทึกแล้ว'); };
   $('#btnPpTest').onclick = () => {
-    if (!ppReady()) return toast('ใส่รหัสพร้อมเพย์ก่อน');
+    if (!ppReady()) return toast('ใส่รหัสพร้อมเพย์ หรือ QR ร้านค้าก่อน');
     const amt = 1;
     showModal(`<h3>ทดสอบ QR พร้อมเพย์</h3><div class="qr-box"><div id="qrHere"></div><div class="qr-amt">฿${money(amt)}</div>
-      <div class="muted small">${esc(settings.ppName || '')} ${esc(ppMask(settings.ppId))}</div></div>
+      <div class="small">${payScanLabel()}</div><div class="muted small">${esc(payWho())}</div></div>
       <p class="small">ลองสแกนด้วยแอพธนาคารจากมือถืออีกเครื่อง ถ้าชื่อผู้รับที่แอพธนาคารแสดงตรงกับบัญชีร้าน แปลว่าตั้งค่าถูกต้อง (ไม่ต้องกดโอนจริงก็ได้)</p>
       <div class="actions"><button class="btn" id="tClose">ปิด</button></div>`);
-    $('#qrHere').appendChild(qrCanvas(promptPayPayload(settings.ppId, amt), 220));
+    $('#qrHere').appendChild(qrCanvas(billQRText({ total: amt }), 220));
     $('#tClose').onclick = closeModal;
   };
   $('#sRetention').onchange = async e => {

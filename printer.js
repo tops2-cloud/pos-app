@@ -70,11 +70,11 @@ function receiptCanvas(s, W, fs) {
     const qt = typeof billQRText === 'function' ? billQRText(s) : '';
     hr();
     if (qt) {
-      center('สแกนจ่ายด้วยแอพธนาคาร · พร้อมเพย์', fs * 0.95, true);
+      center(payScanLabel(), fs * 0.95, true);
       const q = Math.round(Math.min(inner, W * 0.72));
       y += fs * 0.2; drawQR(x, qt, Math.round((W - q) / 2), Math.round(y), q); y += q + fs * 0.3;
       center(`฿${money(s.total)}`, fs * 1.3, true);
-      const who = [settings.ppName, ppMask(settings.ppId)].filter(Boolean).join(' · ');
+      const who = payWho();
       if (who) center(who, fs * 0.9);
     }
     if (settings.bankText) center(`${qt ? 'หรือโอนเข้า ' : 'โอนเข้า '}${settings.bankText}`, fs * 0.9);
