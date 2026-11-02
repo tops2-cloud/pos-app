@@ -37,7 +37,7 @@ let products = [];
 const codeMap = new Map();           // code -> {p, i}
 let cart = [];                       // {id, pid, ui, qty, disc}
 let billDisc = null;                 // {type:'baht'|'pct', val}
-let settings = { key: 'main', shopName: 'ร้านของฉัน', retentionDays: 30, lastBillNo: 0 };
+let settings = { key: 'main', shopName: 'ร้านของฉัน', retentionDays: 30, lastBillNo: 0, paperMM: 58, receiptFooter: 'ขอบคุณที่ใช้บริการ', autoPrint: false };
 let browseOpen = false;
 
 function rebuildIndex() {
@@ -252,6 +252,7 @@ function openPay() {
       cart = []; billDisc = null; renderCart();
       showReceipt(sale, true);
       purgeOld();
+      if (settings.autoPrint) printReceipt(sale, $('#rPrint'));
     } catch (e) { $('#pOk').disabled = false; toast('บันทึกไม่สำเร็จ: ' + e.message); }
   };
 }
@@ -284,7 +285,12 @@ function receiptHTML(s) {
 function showReceipt(s, justSold) {
   showModal(`${justSold && s.method === 'cash' ? `<div class="change">เงินทอน ฿<b style="font-size:2rem">${money(s.change)}</b></div>` : ''}
     ${receiptHTML(s)}
+    <div class="actions"><button class="btn" id="rPrint">🖨️ พิมพ์ใบเสร็จ</button><button class="btn" id="rShare">📤 แชร์รูป (LINE)</button></div>
+    <div class="center"><button class="link small" id="rSysPrint">พิมพ์ผ่านแอพอื่น / ระบบ</button></div>
     <div class="actions">${justSold ? '<button class="btn primary big" id="rNew">บิลใหม่</button>' : '<button class="btn danger" id="rDel">ลบบิลนี้</button><button class="btn" id="rClose">ปิด</button>'}</div>`);
+  $('#rPrint').onclick = e => printReceipt(s, e.currentTarget);
+  $('#rShare').onclick = () => shareReceipt(s);
+  $('#rSysPrint').onclick = () => printViaSystem(s);
   if (justSold) $('#rNew').onclick = () => { closeModal(); toast('บันทึกการขายแล้ว'); };
   else {
     $('#rClose').onclick = closeModal;
@@ -508,6 +514,11 @@ function purgeOld() {
 async function renderSettings() {
   $('#sShop').value = settings.shopName;
   $('#sRetention').value = String(settings.retentionDays);
+  $('#sPaper').value = String(settings.paperMM === 80 ? 80 : 58);
+  $('#sFooter').value = settings.receiptFooter || '';
+  $('#sAutoPrint').checked = !!settings.autoPrint;
+  $('#sPrinter').textContent = !navigator.bluetooth ? 'เบราว์เซอร์นี้ไม่รองรับบลูทูธ — ใช้ปุ่ม "พิมพ์ผ่านแอพอื่น" แทน'
+    : settings.printerName ? `เครื่องพิมพ์ที่ใช้: ${settings.printerName}` : 'ยังไม่ได้เลือกเครื่องพิมพ์';
   const all = await getAll('sales');
   const oldest = all.reduce((m, s) => Math.min(m, s.createdAt), Infinity);
   let est = '';
@@ -629,6 +640,16 @@ function bind() {
     toast(d ? `ตั้งค่าเก็บข้อมูล ${d} วันแล้ว${k ? ` · ลบบิลเก่า ${k} บิล` : ''}` : 'ตั้งค่าเก็บข้อมูลตลอดแล้ว');
     renderSettings();
   };
+  $('#sPaper').onchange = async e => { settings.paperMM = +e.target.value; await saveSettings(); toast(`กระดาษ ${settings.paperMM} มม.`); };
+  $('#sFooter').onchange = async e => { settings.receiptFooter = e.target.value.trim(); await saveSettings(); toast('บันทึกแล้ว'); };
+  $('#sAutoPrint').onchange = async e => { settings.autoPrint = e.target.checked; await saveSettings(); };
+  $('#btnPickPrinter').onclick = async () => {
+    try { await btPick(); toast('เชื่อมต่อเครื่องพิมพ์แล้ว'); }
+    catch (e) { toast(e.name === 'NotFoundError' ? 'ยกเลิกการเลือก' : e.message, 4500); }
+    renderSettings();
+  };
+  $('#btnTestPrint').onclick = e => printReceipt(testReceipt(), e.currentTarget);
+  $('#btnTestShare').onclick = () => printViaSystem(testReceipt());
   $('#btnBackup').onclick = backup;
   $('#btnRestore').onclick = () => $('#fileBackup').click();
   $('#fileBackup').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (f) restore(await f.text()); };

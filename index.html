@@ -83,6 +83,21 @@
       <p id="sStats" class="small"></p>
     </div>
     <div class="card">
+      <h3>ใบเสร็จ / เครื่องพิมพ์</h3>
+      <label>ขนาดกระดาษ
+        <select id="sPaper"><option value="58">58 มม.</option><option value="80">80 มม.</option></select>
+      </label>
+      <label>ข้อความท้ายใบเสร็จ<input id="sFooter" placeholder="เช่น ขอบคุณที่ใช้บริการ"></label>
+      <label class="check"><input type="checkbox" id="sAutoPrint"> พิมพ์ใบเสร็จอัตโนมัติหลังขาย</label>
+      <p id="sPrinter" class="small"></p>
+      <div class="row gap wrap">
+        <button id="btnPickPrinter" class="btn">เชื่อมต่อเครื่องพิมพ์บลูทูธ</button>
+        <button id="btnTestPrint" class="btn">ทดสอบพิมพ์</button>
+        <button id="btnTestShare" class="btn small">ทดสอบพิมพ์ผ่านแอพอื่น</button>
+      </div>
+      <p class="muted small">รองรับเครื่องพิมพ์ความร้อนบลูทูธที่ใช้คำสั่ง ESC/POS ผ่าน Chrome บน Android (เครื่องต้องรองรับ BLE) · ถ้าหาเครื่องไม่เจอ ให้ติดตั้งแอพ RawBT แล้วใช้ "พิมพ์ผ่านแอพอื่น"</p>
+    </div>
+    <div class="card">
       <h3>สำรอง / กู้คืนข้อมูล</h3>
       <p class="muted small">ข้อมูลทั้งหมด (สินค้า + ประวัติการขาย) เก็บอยู่ในมือถือเครื่องนี้เท่านั้น ถ้าล้างข้อมูลเบราว์เซอร์หรือเปลี่ยนเครื่อง ข้อมูลจะหาย ควรกดสำรองเป็นระยะ</p>
       <div class="row gap wrap">
@@ -95,7 +110,7 @@
       <h3>อื่น ๆ</h3>
       <button id="btnClearSales" class="btn danger">ลบประวัติการขายทั้งหมด</button>
     </div>
-    <p class="muted small center">POS v1.0</p>
+    <p class="muted small center">POS v1.1</p>
   </section>
 </main>
 
@@ -130,8 +145,11 @@
 </div>
 
 <div id="toast" class="toast"></div>
+<div id="printArea"></div>
+<style id="pageStyle"></style>
 
 <script src="vendor/html5-qrcode.min.js" defer></script>
+<script src="printer.js" defer></script>
 <script src="app.js" defer></script>
 </body>
 </html>
