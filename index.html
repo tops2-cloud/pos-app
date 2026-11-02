@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>POS ขายสินค้า</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><span id="shopTitle">POS</span><span id="clock" class="muted"></span></header>
+
+<main>
+  <!-- ขาย -->
+  <section id="tab-sell" class="tab active">
+    <div class="searchbar">
+      <input id="q" type="search" placeholder="พิมพ์ชื่อ หรือ รหัสสินค้า" autocomplete="off" enterkeyhint="go">
+      <button id="btnScan" class="icon-btn" title="สแกนบาร์โค้ด">📷</button>
+      <button id="btnBrowse" class="icon-btn" title="เลือกจากรายการ">☰</button>
+    </div>
+    <div id="results" class="results hidden"></div>
+    <div id="cart" class="cart"></div>
+  </section>
+
+  <!-- สินค้า -->
+  <section id="tab-products" class="tab">
+    <div class="searchbar">
+      <input id="pq" type="search" placeholder="ค้นหาสินค้า" autocomplete="off">
+      <button id="btnAddProduct" class="btn primary">+ เพิ่ม</button>
+    </div>
+    <div class="row gap wrap">
+      <button id="btnImport" class="btn small">นำเข้า CSV</button>
+      <button id="btnExportProducts" class="btn small">ส่งออก CSV</button>
+      <span id="pcount" class="muted small"></span>
+    </div>
+    <input type="file" id="fileCsv" accept=".csv,text/csv" hidden>
+    <div id="plist"></div>
+  </section>
+
+  <!-- รายงาน -->
+  <section id="tab-report" class="tab">
+    <div class="row gap wrap">
+      <label class="inline">จาก <input type="date" id="dFrom"></label>
+      <label class="inline">ถึง <input type="date" id="dTo"></label>
+    </div>
+    <div class="row gap wrap">
+      <button class="btn small" data-range="today">วันนี้</button>
+      <button class="btn small" data-range="7">7 วัน</button>
+      <button class="btn small" data-range="30">30 วัน</button>
+      <button class="btn small" data-range="month">เดือนนี้</button>
+      <button class="btn small" id="btnExportSales">ส่งออก CSV</button>
+    </div>
+    <div id="report"></div>
+  </section>
+
+  <!-- ตั้งค่า -->
+  <section id="tab-settings" class="tab">
+    <div class="card">
+      <h3>ข้อมูลร้าน</h3>
+      <label>ชื่อร้าน<input id="sShop" autocomplete="off"></label>
+    </div>
+    <div class="card">
+      <h3>ระยะเวลาเก็บข้อมูลการขาย</h3>
+      <label>เก็บประวัติการขายไว้
+        <select id="sRetention">
+          <option value="7">7 วัน</option>
+          <option value="15">15 วัน</option>
+          <option value="30">30 วัน</option>
+          <option value="60">60 วัน</option>
+          <option value="90">90 วัน</option>
+          <option value="180">180 วัน</option>
+          <option value="365">1 ปี</option>
+          <option value="730">2 ปี</option>
+          <option value="0">ไม่ลบ (เก็บตลอด)</option>
+        </select>
+      </label>
+      <p class="muted small">บิลที่เก่ากว่าจำนวนวันที่เลือกจะถูกลบอัตโนมัติทุกครั้งที่เปิดแอพและหลังขายเสร็จ ถ้าต้องการเก็บไว้ ให้ "ส่งออก CSV" ที่แท็บรายงานก่อน</p>
+      <p id="sStats" class="small"></p>
+    </div>
+    <div class="card">
+      <h3>สำรอง / กู้คืนข้อมูล</h3>
+      <p class="muted small">ข้อมูลทั้งหมด (สินค้า + ประวัติการขาย) เก็บอยู่ในมือถือเครื่องนี้เท่านั้น ถ้าล้างข้อมูลเบราว์เซอร์หรือเปลี่ยนเครื่อง ข้อมูลจะหาย ควรกดสำรองเป็นระยะ</p>
+      <div class="row gap wrap">
+        <button id="btnBackup" class="btn">สำรองข้อมูล (ดาวน์โหลดไฟล์)</button>
+        <button id="btnRestore" class="btn">กู้คืนจากไฟล์</button>
+      </div>
+      <input type="file" id="fileBackup" accept=".json,application/json" hidden>
+    </div>
+    <div class="card">
+      <h3>อื่น ๆ</h3>
+      <button id="btnClearSales" class="btn danger">ลบประวัติการขายทั้งหมด</button>
+    </div>
+    <p class="muted small center">POS v1.0</p>
+  </section>
+</main>
+
+<div id="billbar" class="billbar">
+  <div class="row between small">
+    <span>ยอดก่อนลด ฿<span id="bSub">0.00</span> · <span id="bCount">0</span> รายการ</span>
+    <button id="btnBillDisc" class="link">+ ส่วนลดท้ายบิล</button>
+  </div>
+  <div class="row between">
+    <button id="btnClear" class="btn small">ล้างบิล</button>
+    <div class="total">฿<span id="bTotal">0.00</span></div>
+    <button id="btnPay" class="btn primary big">ชำระเงิน</button>
+  </div>
+</div>
+
+<nav class="tabs">
+  <button data-tab="sell" class="active"><span>🛒</span>ขาย</button>
+  <button data-tab="products"><span>📦</span>สินค้า</button>
+  <button data-tab="report"><span>📊</span>รายงาน</button>
+  <button data-tab="settings"><span>⚙️</span>ตั้งค่า</button>
+</nav>
+
+<div id="modal" class="modal hidden"><div class="sheet" id="sheet"></div></div>
+
+<div id="scanOverlay" class="modal scan hidden">
+  <div class="sheet">
+    <h3 id="scanTitle">สแกนบาร์โค้ด</h3>
+    <div id="reader"></div>
+    <div id="scanMsg" class="scan-msg"></div>
+    <button id="scanClose" class="btn block">ปิดกล้อง</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="vendor/html5-qrcode.min.js" defer></script>
+<script src="app.js" defer></script>
+</body>
+</html>
