@@ -118,6 +118,16 @@ main{padding:12px 16px;max-width:760px;margin:0 auto}
 label.check{display:flex;align-items:center;gap:10px;color:var(--text)}
 label.check input{width:22px;height:22px;margin:0}
 #printArea{display:none}
+.badge{display:inline-block;border-radius:999px;padding:2px 10px;font-size:.8rem;font-weight:600;vertical-align:middle}
+.badge.warn{background:#fef3c7;color:#92400e}
+.badge.ok{background:var(--pri-soft);color:var(--pri)}
+.qr-box{text-align:center;border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0 14px;background:#fff;color:#111}
+.qr-box canvas{display:block;margin:0 auto;image-rendering:pixelated}
+.qr-box .muted{color:#555}
+.qr-box.off{background:var(--bg);color:var(--text);display:flex;flex-direction:column;gap:8px;align-items:center}
+.qr-amt{font-size:1.5rem;font-weight:800;margin-top:6px;color:#0f766e}
+.warn-card{border-color:#f59e0b}
+.sheet .actions.pin{position:sticky;bottom:calc(-16px - env(safe-area-inset-bottom));z-index:2;background:var(--card);margin:14px -16px -16px;padding:10px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);box-shadow:0 -6px 14px rgba(0,0,0,.06)}
 @media print{
   body{padding:0!important;background:#fff}
   body>*:not(#printArea){display:none!important}

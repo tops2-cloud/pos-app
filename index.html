@@ -65,6 +65,15 @@
       <label>ชื่อร้าน<input id="sShop" autocomplete="off"></label>
     </div>
     <div class="card">
+      <h3>รับเงินโอน / พร้อมเพย์</h3>
+      <label>เบอร์พร้อมเพย์ หรือ เลขบัตรประชาชน/ผู้เสียภาษี<input id="sPpId" inputmode="numeric" autocomplete="off" placeholder="เช่น 0812345678"></label>
+      <p id="sPpStatus" class="small"></p>
+      <label>ชื่อบัญชีที่แสดงบนบิล (ไม่บังคับ)<input id="sPpName" autocomplete="off" placeholder="เช่น นายสมชาย ใจดี"></label>
+      <label>บัญชีธนาคาร สำรองไว้แสดงบนบิล (ไม่บังคับ)<input id="sBank" autocomplete="off" placeholder="เช่น กสิกร 123-4-56789-0"></label>
+      <div class="row gap wrap"><button id="btnPpTest" class="btn small">ทดสอบ QR</button></div>
+      <p class="muted small">QR พร้อมเพย์ต้องใช้เบอร์มือถือหรือเลขบัตรที่ผูกพร้อมเพย์ไว้แล้ว เลขบัญชีธนาคารสร้าง QR ไม่ได้ จะแสดงเป็นข้อความให้ลูกค้าโอนเองแทน · แอพตรวจไม่ได้ว่าเงินเข้าแล้ว ต้องดูแจ้งเตือนจากแอพธนาคารก่อนกด "รับโอนแล้ว"</p>
+    </div>
+    <div class="card">
       <h3>ระยะเวลาเก็บข้อมูลการขาย</h3>
       <label>เก็บประวัติการขายไว้
         <select id="sRetention">
@@ -79,7 +88,7 @@
           <option value="0">ไม่ลบ (เก็บตลอด)</option>
         </select>
       </label>
-      <p class="muted small">บิลที่เก่ากว่าจำนวนวันที่เลือกจะถูกลบอัตโนมัติทุกครั้งที่เปิดแอพและหลังขายเสร็จ ถ้าต้องการเก็บไว้ ให้ "ส่งออก CSV" ที่แท็บรายงานก่อน</p>
+      <p class="muted small">บิลที่ชำระแล้วและเก่ากว่าจำนวนวันที่เลือกจะถูกลบอัตโนมัติ (บิลค้างชำระไม่ถูกลบ)ทุกครั้งที่เปิดแอพและหลังขายเสร็จ ถ้าต้องการเก็บไว้ ให้ "ส่งออก CSV" ที่แท็บรายงานก่อน</p>
       <p id="sStats" class="small"></p>
     </div>
     <div class="card">
@@ -110,7 +119,7 @@
       <h3>อื่น ๆ</h3>
       <button id="btnClearSales" class="btn danger">ลบประวัติการขายทั้งหมด</button>
     </div>
-    <p class="muted small center">POS v1.1</p>
+    <p class="muted small center">POS v1.2</p>
   </section>
 </main>
 
@@ -122,7 +131,7 @@
   <div class="row between">
     <button id="btnClear" class="btn small">ล้างบิล</button>
     <div class="total">฿<span id="bTotal">0.00</span></div>
-    <button id="btnPay" class="btn primary big">ชำระเงิน</button>
+    <button id="btnPay" class="btn primary big">เช็คบิล</button>
   </div>
 </div>
 
@@ -149,6 +158,8 @@
 <style id="pageStyle"></style>
 
 <script src="vendor/html5-qrcode.min.js" defer></script>
+<script src="vendor/qrcode-generator.js" defer></script>
+<script src="promptpay.js" defer></script>
 <script src="printer.js" defer></script>
 <script src="app.js" defer></script>
 </body>

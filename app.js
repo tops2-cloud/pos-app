@@ -219,71 +219,142 @@ function openDiscount({ title, base, cur, onSave }) {
   setTimeout(() => $('#dVal').focus(), 60);
 }
 
-function openPay() {
-  if (!cart.length) return toast('ยังไม่มีสินค้าในบิล');
-  const t = cartTotals();
-  let method = 'cash';
-  const notes = [20, 50, 100, 500, 1000].filter(n => n > t.total).slice(0, 3);
-  showModal(`<h3>ชำระเงิน</h3>
-    <div class="pay-total">฿${money(t.total)}</div>
-    ${t.itemDisc || t.billDisc ? `<p class="center muted small">ยอดก่อนลด ฿${money(t.sub)} · ส่วนลดรวม ฿${money(t.itemDisc + t.billDisc)}</p>` : ''}
-    <div class="seg"><button data-m="cash" class="on">เงินสด</button><button data-m="transfer">โอน / QR</button></div>
-    <div id="cashBox">
-      <label>รับเงินมา<input id="pRecv" inputmode="decimal" placeholder="${money(t.total)}"></label>
-      <div class="row gap wrap quick"><button class="btn small" data-q="${t.total}">พอดี</button>${notes.map(n => `<button class="btn small" data-q="${n}">฿${n}</button>`).join('')}</div>
-      <div class="change">เงินทอน ฿<b id="pChange">0.00</b></div>
-    </div>
-    <div class="actions"><button class="btn" id="pCancel">ยกเลิก</button><button class="btn primary big" id="pOk">ยืนยันการขาย</button></div>`);
-  const recv = () => { const v = num($('#pRecv').value); return isNaN(v) ? t.total : v; };
-  const upd = () => { $('#pChange').textContent = money(Math.max(0, recv() - t.total)); };
-  $('#pRecv').oninput = upd;
-  $$('#sheet [data-q]').forEach(b => b.onclick = () => { $('#pRecv').value = b.dataset.q; upd(); });
-  $$('#sheet .seg button').forEach(b => b.onclick = () => {
-    method = b.dataset.m; $$('#sheet .seg button').forEach(x => x.classList.toggle('on', x === b));
-    $('#cashBox').classList.toggle('hidden', method !== 'cash');
-  });
-  $('#pCancel').onclick = closeModal;
-  $('#pOk').onclick = async () => {
-    const received = method === 'cash' ? recv() : t.total;
-    if (method === 'cash' && received < t.total) return toast('รับเงินไม่พอ');
-    $('#pOk').disabled = true;
-    try {
-      const sale = await saveSale(t, method, received);
-      cart = []; billDisc = null; renderCart();
-      showReceipt(sale, true);
-      purgeOld();
-      if (settings.autoPrint) printReceipt(sale, $('#rPrint'));
-    } catch (e) { $('#pOk').disabled = false; toast('บันทึกไม่สำเร็จ: ' + e.message); }
-  };
+/* ===================== เช็คบิล / ชำระเงิน / ใบเสร็จ ===================== */
+const isUnpaid = s => s.status === 'unpaid';
+const methodLabel = s => isUnpaid(s) ? 'ค้างชำระ' : s.method === 'cash' ? 'เงินสด' : 'โอน / พร้อมเพย์';
+const ppReady = () => !!ppParseId(settings.ppId);
+function billQRText(s) {
+  if (!ppReady() || !(s.total > 0)) return '';
+  try { return promptPayPayload(settings.ppId, s.total); } catch (e) { return ''; }
 }
 
-async function saveSale(t, method, received) {
-  settings.lastBillNo = (settings.lastBillNo || 0) + 1;
-  await saveSettings();
-  const sale = {
-    id: uid(), no: settings.lastBillNo, createdAt: Date.now(),
+/** บิลร่างจากตะกร้า (ยังไม่บันทึก) */
+function draftBill() {
+  const t = cartTotals();
+  return {
+    id: uid(), no: (settings.lastBillNo || 0) + 1, createdAt: Date.now(), status: 'unpaid', note: '',
     items: cart.map(l => { const { p, u, base, d, total } = lineInfo(l); return { pid: p.id, name: p.name, unit: u.unit, code: u.code || '', price: u.price, qty: l.qty, base, disc: l.disc, discAmt: d, total }; }),
     sub: t.sub, itemDisc: t.itemDisc, billDiscDef: billDisc, billDisc: t.billDisc, total: t.total,
-    method, received: r2(received), change: r2(received - t.total)
+    method: '', received: 0, change: 0
   };
-  await put('sales', sale);
-  return sale;
+}
+/** บันทึกบิล — บิลใหม่จะได้เลขที่จริงตอนนี้ */
+async function storeBill(s, isNew) {
+  if (isNew) {
+    s.no = Math.max((settings.lastBillNo || 0) + 1, s.no || 0);
+    settings.lastBillNo = s.no; await saveSettings();
+    cart = []; billDisc = null; renderCart();
+  }
+  await put('sales', s);
+}
+
+function openPay() {
+  if (!cart.length) return toast('ยังไม่มีสินค้าในบิล');
+  openBill(draftBill(), true);
+}
+
+/** หน้าเช็คบิล: แสดงรายการ + ยอด + QR พร้อมเพย์ ก่อนรับเงิน */
+function openBill(s, isNew) {
+  const qrText = billQRText(s);
+  const qrBlock = !(s.total > 0) ? '' : qrText
+    ? `<div class="qr-box"><div id="qrHere"></div>
+        <div class="qr-amt">฿${money(s.total)}</div>
+        <div class="small">สแกนจ่ายด้วยแอพธนาคาร · พร้อมเพย์</div>
+        <div class="muted small">${esc(settings.ppName || '')}${settings.ppName ? ' · ' : ''}${esc(ppMask(settings.ppId))}</div>
+        ${settings.bankText ? `<div class="muted small">หรือโอนเข้า ${esc(settings.bankText)}</div>` : ''}</div>`
+    : `<div class="qr-box off">
+        ${settings.bankText ? `<div class="small">โอนเข้า <b>${esc(settings.bankText)}</b></div>` : ''}
+        <div class="small">ยังไม่ได้ตั้งค่าพร้อมเพย์ จึงยังสร้าง QR รับเงินไม่ได้</div>
+        <button class="btn small" id="bGoSettings">ตั้งค่าพร้อมเพย์</button></div>`;
+  showModal(`<div class="row between"><h3>เช็คบิล</h3><span class="badge warn">ยังไม่ชำระ</span></div>
+    <div class="pay-total">฿${money(s.total)}</div>
+    ${qrBlock}
+    ${receiptHTML(s)}
+    ${isNew ? '' : `<label>ชื่อลูกค้า / หมายเหตุ<input id="bNote" value="${esc(s.note || '')}" placeholder="เช่น พี่ต้อม ห้อง 12"></label>`}
+    <div class="actions"><button class="btn" id="bShare">📤 ส่งบิล (รูป)</button><button class="btn" id="bPrint">🖨️ พิมพ์บิล</button></div>
+    <div class="actions">${isNew
+      ? '<button class="btn" id="bBack">กลับไปแก้บิล</button><button class="btn" id="bHold">บันทึกค้างชำระ</button>'
+      : '<button class="btn danger" id="bDel">ลบบิล</button><button class="btn" id="bClose">ปิด</button>'}</div>
+    <div class="actions pin"><button class="btn primary big" id="bCash">💵 รับเงินสด</button><button class="btn primary big" id="bXfer">📱 รับโอนแล้ว</button></div>`);
+  if (qrText) $('#qrHere').appendChild(qrCanvas(qrText, 240));
+  const gs = $('#bGoSettings'); if (gs) gs.onclick = () => { closeModal(); switchTab('settings'); setTimeout(() => $('#sPpId')?.focus(), 80); };
+  const syncNote = async () => { const n = $('#bNote'); if (n && n.value.trim() !== (s.note || '')) { s.note = n.value.trim(); await put('sales', s); } };
+  $('#bShare').onclick = () => shareReceipt(s);
+  $('#bPrint').onclick = e => printReceipt(s, e.currentTarget);
+  $('#bCash').onclick = async () => { await syncNote(); openCash(s, isNew); };
+  $('#bXfer').onclick = async () => {
+    if (!confirm(`ตรวจสอบแล้วว่าเงินโอน ฿${money(s.total)} เข้าบัญชีแล้ว?\n(ดูจากแจ้งเตือนของแอพธนาคาร)`)) return;
+    await syncNote(); finishPay(s, isNew, 'transfer', s.total);
+  };
+  if (isNew) {
+    $('#bBack').onclick = closeModal;
+    $('#bHold').onclick = async () => {
+      const note = prompt('ชื่อลูกค้า / หมายเหตุ (ไม่ใส่ก็ได้)', '');
+      if (note === null) return;
+      s.note = note.trim();
+      try { await storeBill(s, true); closeModal(); toast(`บันทึกบิล #${s.no} เป็นค้างชำระแล้ว · ดูได้ที่แท็บรายงาน`, 3500); }
+      catch (e) { toast('บันทึกไม่สำเร็จ: ' + e.message); }
+    };
+  } else {
+    $('#bClose').onclick = async () => { await syncNote(); closeModal(); renderReport(); };
+    $('#bDel').onclick = async () => { if (!confirm(`ลบบิล #${s.no} (ค้างชำระ) ออกจากระบบ?`)) return; await del('sales', s.id); closeModal(); renderReport(); toast('ลบบิลแล้ว'); };
+  }
+}
+
+/** รับเงินสด + คำนวณเงินทอน */
+function openCash(s, isNew) {
+  const notes = [20, 50, 100, 500, 1000].filter(n => n > s.total).slice(0, 3);
+  showModal(`<h3>รับเงินสด · บิล #${s.no}</h3>
+    <div class="pay-total">฿${money(s.total)}</div>
+    <label>รับเงินมา<input id="pRecv" inputmode="decimal" placeholder="${money(s.total)}"></label>
+    <div class="row gap wrap quick"><button class="btn small" data-q="${s.total}">พอดี</button>${notes.map(n => `<button class="btn small" data-q="${n}">฿${n}</button>`).join('')}</div>
+    <div class="change">เงินทอน ฿<b id="pChange">0.00</b></div>
+    <div class="actions"><button class="btn" id="pBack">กลับไปหน้าบิล</button><button class="btn primary big" id="pOk">ยืนยันรับเงิน</button></div>`);
+  const recv = () => { const v = num($('#pRecv').value); return isNaN(v) ? s.total : v; };
+  const upd = () => { $('#pChange').textContent = money(Math.max(0, recv() - s.total)); };
+  $('#pRecv').oninput = upd;
+  $$('#sheet [data-q]').forEach(b => b.onclick = () => { $('#pRecv').value = b.dataset.q; upd(); });
+  $('#pBack').onclick = () => openBill(s, isNew);
+  $('#pOk').onclick = () => {
+    if (recv() < s.total) return toast('รับเงินไม่พอ');
+    $('#pOk').disabled = true;
+    finishPay(s, isNew, 'cash', recv());
+  };
+  setTimeout(() => $('#pRecv')?.focus(), 60);
+}
+
+/** ปิดบิล → กลายเป็นใบเสร็จ */
+async function finishPay(s, isNew, method, received) {
+  const now = Date.now();
+  Object.assign(s, { status: 'paid', method, received: r2(received), change: r2(received - s.total), paidAt: now });
+  try { await storeBill(s, isNew); }
+  catch (e) { toast('บันทึกไม่สำเร็จ: ' + e.message); return; }
+  showReceipt(s, true);
+  purgeOld();
+  if (!isNew) renderReport();
+  if (settings.autoPrint) printReceipt(s, $('#rPrint'));
 }
 
 function receiptHTML(s) {
+  const unpaid = isUnpaid(s);
+  const paidLater = !unpaid && s.paidAt && s.paidAt - s.createdAt > 6e4;
   return `<div class="receipt">
-    <div class="center"><b>${esc(settings.shopName)}</b><br><span class="muted small">บิล #${s.no} · ${fmtDate(s.createdAt)} ${fmtTime(s.createdAt)}</span></div>
+    <div class="center"><b>${esc(settings.shopName)}</b><br><span class="muted small">${unpaid ? 'ใบแจ้งยอด' : 'ใบเสร็จ'} · บิล #${s.no} · ${fmtDate(s.createdAt)} ${fmtTime(s.createdAt)}</span>
+      ${s.note ? `<br><span class="small">ลูกค้า: ${esc(s.note)}</span>` : ''}</div>
     ${s.items.map(i => `<div class="r-line"><div>${esc(i.name)} <span class="muted">(${esc(i.unit)})</span><br><span class="muted small">${i.qty} × ${money(i.price)}${i.discAmt ? ` · ลด ${money(i.discAmt)}` : ''}${i.code ? ` · #${esc(i.code)}` : ''}</span></div><div>${money(i.total)}</div></div>`).join('')}
     <div class="r-sum"><span>รวม</span><span>${money(s.sub)}</span></div>
     ${s.itemDisc ? `<div class="r-sum"><span>ส่วนลดรายการ</span><span>−${money(s.itemDisc)}</span></div>` : ''}
     ${s.billDisc ? `<div class="r-sum"><span>ส่วนลดท้ายบิล</span><span>−${money(s.billDisc)}</span></div>` : ''}
-    <div class="r-sum big"><span>สุทธิ</span><span>฿${money(s.total)}</span></div>
-    <div class="r-sum"><span>${s.method === 'cash' ? 'เงินสด' : 'โอน/QR'}</span><span>${money(s.received)}</span></div>
+    <div class="r-sum big"><span>${unpaid ? 'ยอดที่ต้องชำระ' : 'สุทธิ'}</span><span>฿${money(s.total)}</span></div>
+    ${unpaid ? '' : `<div class="r-sum"><span>${methodLabel(s)}</span><span>${money(s.received)}</span></div>
     ${s.method === 'cash' ? `<div class="r-sum"><span>เงินทอน</span><span>${money(s.change)}</span></div>` : ''}
+    ${paidLater ? `<div class="r-sum muted small"><span>ชำระเมื่อ</span><span>${fmtDate(s.paidAt)} ${fmtTime(s.paidAt)}</span></div>` : ''}`}
   </div>`;
 }
 function showReceipt(s, justSold) {
+  if (isUnpaid(s)) return openBill(s, false);
   showModal(`${justSold && s.method === 'cash' ? `<div class="change">เงินทอน ฿<b style="font-size:2rem">${money(s.change)}</b></div>` : ''}
+    ${justSold ? '<div class="center"><span class="badge ok">ชำระแล้ว</span></div>' : ''}
     ${receiptHTML(s)}
     <div class="actions"><button class="btn" id="rPrint">🖨️ พิมพ์ใบเสร็จ</button><button class="btn" id="rShare">📤 แชร์รูป (LINE)</button></div>
     <div class="center"><button class="link small" id="rSysPrint">พิมพ์ผ่านแอพอื่น / ระบบ</button></div>
@@ -460,37 +531,44 @@ async function salesInRange() {
 async function renderReport() {
   if (!db) return;
   const list = await salesInRange();
-  const sum = k => r2(list.reduce((a, s) => a + (s[k] || 0), 0));
-  const cash = r2(list.filter(s => s.method === 'cash').reduce((a, s) => a + s.total, 0));
+  const paid = list.filter(s => !isUnpaid(s));
+  const unpaidAll = (await getAll('sales')).filter(isUnpaid).sort((a, b) => b.createdAt - a.createdAt);
+  const unpaidSum = r2(unpaidAll.reduce((a, s) => a + s.total, 0));
+  const sum = k => r2(paid.reduce((a, s) => a + (s[k] || 0), 0));
+  const cash = r2(paid.filter(s => s.method === 'cash').reduce((a, s) => a + s.total, 0));
   const items = new Map();
-  list.forEach(s => s.items.forEach(i => {
+  paid.forEach(s => s.items.forEach(i => {
     const k = i.name + '|' + i.unit; const x = items.get(k) || { name: i.name, unit: i.unit, qty: 0, total: 0 };
     x.qty = r2(x.qty + i.qty); x.total = r2(x.total + i.total); items.set(k, x);
   }));
   const top = [...items.values()].sort((a, b) => b.total - a.total).slice(0, 15);
   const multiDay = $('#dFrom').value !== $('#dTo').value;
   $('#report').innerHTML = `
+    ${unpaidAll.length ? `<div class="card warn-card"><h3>บิลค้างชำระ ${unpaidAll.length} บิล · ฿${money(unpaidSum)}</h3><table class="tbl">
+      ${unpaidAll.map(s => `<tr class="bill-row" data-sid="${s.id}"><td>#${s.no}</td><td>${fmtDate(s.createdAt)}</td><td>${esc(s.note || '-')}</td><td class="num">${money(s.total)}</td></tr>`).join('')}</table>
+      <p class="muted small">แตะบิลเพื่อเปิด QR / รับเงิน · บิลค้างชำระจะไม่ถูกลบอัตโนมัติ และยังไม่นับในยอดขาย</p></div>` : ''}
     <div class="stats">
       <div class="stat"><div class="v">฿${money(sum('total'))}</div><div class="k">ยอดขายสุทธิ</div></div>
-      <div class="stat"><div class="v">${list.length}</div><div class="k">จำนวนบิล</div></div>
+      <div class="stat"><div class="v">${paid.length}</div><div class="k">จำนวนบิลที่ชำระแล้ว</div></div>
       <div class="stat"><div class="v">฿${money(cash)}</div><div class="k">เงินสด · โอน ฿${money(sum('total') - cash)}</div></div>
       <div class="stat"><div class="v">฿${money(sum('itemDisc') + sum('billDisc'))}</div><div class="k">ส่วนลดรวม</div></div>
     </div>
     ${top.length ? `<div class="card"><h3>สินค้าขายดี</h3><table class="tbl"><tr><th>สินค้า</th><th class="num">จำนวน</th><th class="num">ยอด</th></tr>
       ${top.map(x => `<tr><td>${esc(x.name)} <span class="muted small">(${esc(x.unit)})</span></td><td class="num">${x.qty}</td><td class="num">${money(x.total)}</td></tr>`).join('')}</table></div>` : ''}
     <div class="card"><h3>รายการบิล</h3>${list.length ? `<table class="tbl"><tr><th>บิล</th><th>เวลา</th><th class="num">รายการ</th><th class="num">ยอด</th></tr>
-      ${list.map(s => `<tr class="bill-row" data-sid="${s.id}"><td>#${s.no}</td><td>${multiDay ? fmtDate(s.createdAt) + ' ' : ''}${fmtTime(s.createdAt)}</td><td class="num">${s.items.length}</td><td class="num">${money(s.total)}</td></tr>`).join('')}</table>`
+      ${list.map(s => `<tr class="bill-row" data-sid="${s.id}"><td>#${s.no}${isUnpaid(s) ? ' <span class="badge warn">ค้าง</span>' : ''}</td><td>${multiDay ? fmtDate(s.createdAt) + ' ' : ''}${fmtTime(s.createdAt)}</td><td class="num">${s.items.length}</td><td class="num">${money(s.total)}</td></tr>`).join('')}</table>`
       : '<p class="muted">ไม่มีการขายในช่วงนี้</p>'}</div>`;
-  $$('#report .bill-row').forEach(tr => tr.onclick = () => showReceipt(list.find(s => s.id === tr.dataset.sid), false));
+  const byId = new Map([...list, ...unpaidAll].map(s => [s.id, s]));
+  $$('#report .bill-row').forEach(tr => tr.onclick = () => showReceipt(byId.get(tr.dataset.sid), false));
 }
 async function exportSalesCSV() {
   const list = (await salesInRange()).reverse();
   if (!list.length) return toast('ไม่มีข้อมูลในช่วงนี้');
-  const rows = [['วันที่', 'เวลา', 'เลขบิล', 'สินค้า', 'หน่วย', 'รหัส', 'ราคา', 'จำนวน', 'ส่วนลด', 'รวม', 'ชำระโดย']];
+  const rows = [['วันที่', 'เวลา', 'เลขบิล', 'สินค้า', 'หน่วย', 'รหัส', 'ราคา', 'จำนวน', 'ส่วนลด', 'รวม', 'ชำระโดย', 'ลูกค้า/หมายเหตุ']];
   list.forEach(s => {
-    const d = todayStr(new Date(s.createdAt)), t = fmtTime(s.createdAt), m = s.method === 'cash' ? 'เงินสด' : 'โอน/QR';
-    s.items.forEach(i => rows.push([d, t, s.no, i.name, i.unit, i.code, i.price, i.qty, i.discAmt, i.total, m]));
-    if (s.billDisc) rows.push([d, t, s.no, 'ส่วนลดท้ายบิล', '', '', '', '', s.billDisc, -s.billDisc, m]);
+    const d = todayStr(new Date(s.createdAt)), t = fmtTime(s.createdAt), m = methodLabel(s), n = s.note || '';
+    s.items.forEach(i => rows.push([d, t, s.no, i.name, i.unit, i.code, i.price, i.qty, i.discAmt, i.total, m, n]));
+    if (s.billDisc) rows.push([d, t, s.no, 'ส่วนลดท้ายบิล', '', '', '', '', s.billDisc, -s.billDisc, m, n]);
   });
   download(`sales-${$('#dFrom').value}_${$('#dTo').value}.csv`, toCSV(rows));
 }
@@ -498,7 +576,8 @@ async function exportSalesCSV() {
 /* ===================== SETTINGS & retention ===================== */
 async function countOlderThan(days) {
   if (!days) return 0;
-  return reqP(store('sales').index('createdAt').count(IDBKeyRange.upperBound(Date.now() - days * DAY, true)));
+  const old = await reqP(store('sales').index('createdAt').getAll(IDBKeyRange.upperBound(Date.now() - days * DAY, true)));
+  return old.filter(s => !isUnpaid(s)).length;
 }
 function purgeOld() {
   const d = +settings.retentionDays;
@@ -507,13 +586,17 @@ function purgeOld() {
   return new Promise((res, rej) => {
     let n = 0;
     const r = store('sales', 'readwrite').index('createdAt').openCursor(IDBKeyRange.upperBound(cutoff, true));
-    r.onsuccess = () => { const c = r.result; if (c) { c.delete(); n++; c.continue(); } else res(n); };
+    r.onsuccess = () => { const c = r.result; if (c) { if (!isUnpaid(c.value)) { c.delete(); n++; } c.continue(); } else res(n); };
     r.onerror = () => rej(r.error);
   });
 }
 async function renderSettings() {
   $('#sShop').value = settings.shopName;
   $('#sRetention').value = String(settings.retentionDays);
+  $('#sPpId').value = settings.ppId || '';
+  $('#sPpName').value = settings.ppName || '';
+  $('#sBank').value = settings.bankText || '';
+  renderPpStatus();
   $('#sPaper').value = String(settings.paperMM === 80 ? 80 : 58);
   $('#sFooter').value = settings.receiptFooter || '';
   $('#sAutoPrint').checked = !!settings.autoPrint;
@@ -524,6 +607,13 @@ async function renderSettings() {
   let est = '';
   try { const e = await navigator.storage?.estimate?.(); if (e) est = ` · ใช้พื้นที่ ~${(e.usage / 1048576).toFixed(1)} MB`; } catch (e) { /* ignore */ }
   $('#sStats').textContent = `มีบิลในเครื่อง ${all.length} บิล${all.length ? ` · เก่าสุด ${fmtDate(oldest)}` : ''} · สินค้า ${products.length} รายการ${est}`;
+}
+function renderPpStatus(typed) {
+  const v = typed !== undefined ? typed : settings.ppId;
+  const p = ppParseId(v);
+  $('#sPpStatus').innerHTML = !String(v || '').trim() ? '<span class="badge warn">ยังไม่ได้ตั้งค่า</span> หน้าเช็คบิลจะยังไม่มี QR'
+    : p ? `<span class="badge ok">ใช้ได้</span> ${PP_TYPE_LABEL[p.type]}${typed !== undefined && p.id !== settings.ppId ? ' · กดออกจากช่องเพื่อบันทึก' : ''}`
+    : '<span class="badge warn">ยังไม่ถูกต้อง</span> เบอร์มือถือ 10 หลัก หรือเลขบัตร 13 หลัก';
 }
 async function backup() {
   const data = { app: 'pos', version: 1, exportedAt: new Date().toISOString(), settings, products: await getAll('products'), sales: await getAll('sales') };
@@ -631,6 +721,25 @@ function bind() {
 
   // settings
   $('#sShop').onchange = async e => { settings.shopName = e.target.value.trim() || 'ร้านของฉัน'; await saveSettings(); $('#shopTitle').textContent = settings.shopName; toast('บันทึกแล้ว'); };
+  $('#sPpId').onchange = async e => {
+    const v = e.target.value.trim();
+    if (v && !ppParseId(v)) { toast('รหัสพร้อมเพย์ไม่ถูกต้อง: ใส่เบอร์มือถือ 10 หลัก หรือเลขบัตรประชาชน/ผู้เสียภาษี 13 หลัก', 4500); renderPpStatus(v); return; }
+    settings.ppId = v ? ppParseId(v).id : ''; await saveSettings();
+    e.target.value = settings.ppId; renderPpStatus(); toast(v ? 'บันทึกพร้อมเพย์แล้ว' : 'ลบพร้อมเพย์แล้ว');
+  };
+  $('#sPpId').oninput = e => renderPpStatus(e.target.value);
+  $('#sPpName').onchange = async e => { settings.ppName = e.target.value.trim(); await saveSettings(); renderPpStatus(); toast('บันทึกแล้ว'); };
+  $('#sBank').onchange = async e => { settings.bankText = e.target.value.trim(); await saveSettings(); toast('บันทึกแล้ว'); };
+  $('#btnPpTest').onclick = () => {
+    if (!ppReady()) return toast('ใส่รหัสพร้อมเพย์ก่อน');
+    const amt = 1;
+    showModal(`<h3>ทดสอบ QR พร้อมเพย์</h3><div class="qr-box"><div id="qrHere"></div><div class="qr-amt">฿${money(amt)}</div>
+      <div class="muted small">${esc(settings.ppName || '')} ${esc(ppMask(settings.ppId))}</div></div>
+      <p class="small">ลองสแกนด้วยแอพธนาคารจากมือถืออีกเครื่อง ถ้าชื่อผู้รับที่แอพธนาคารแสดงตรงกับบัญชีร้าน แปลว่าตั้งค่าถูกต้อง (ไม่ต้องกดโอนจริงก็ได้)</p>
+      <div class="actions"><button class="btn" id="tClose">ปิด</button></div>`);
+    $('#qrHere').appendChild(qrCanvas(promptPayPayload(settings.ppId, amt), 220));
+    $('#tClose').onclick = closeModal;
+  };
   $('#sRetention').onchange = async e => {
     const d = +e.target.value;
     const n = await countOlderThan(d);

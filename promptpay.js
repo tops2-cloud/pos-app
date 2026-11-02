@@ -1,0 +1,85 @@
+'use strict';
+/* =========================================================
+   พร้อมเพย์: สร้างข้อมูล QR ตามมาตรฐาน EMVCo (Thai QR Payment)
+   ฝังยอดเงินในตัว QR ได้ · ไม่ต้องต่อเน็ต ไม่ต้องใช้ API ธนาคาร
+   ใช้ไลบรารี qrcode-generator (vendor/qrcode-generator.js) วาดรูป
+   ========================================================= */
+
+/** ทำความสะอาดและแยกประเภทรหัสพร้อมเพย์
+ *  เบอร์มือถือ 10 หลัก (0xxxxxxxxx) · เลขบัตรประชาชน/ผู้เสียภาษี 13 หลัก · e-Wallet 15 หลัก */
+function ppParseId(raw) {
+  const d = String(raw || '').replace(/[^\d]/g, '');
+  if (/^0\d{9}$/.test(d)) return { type: 'phone', id: d };
+  if (/^66\d{9}$/.test(d)) return { type: 'phone', id: '0' + d.slice(2) };
+  if (/^\d{13}$/.test(d)) return { type: 'nid', id: d };
+  if (/^\d{15}$/.test(d)) return { type: 'ewallet', id: d };
+  return null;
+}
+const PP_TYPE_LABEL = { phone: 'เบอร์มือถือ', nid: 'เลขบัตรประชาชน / เลขผู้เสียภาษี', ewallet: 'e-Wallet ID' };
+
+/** แสดงรหัสแบบปิดบางส่วน เช่น 081-xxx-5678 */
+function ppMask(raw) {
+  const p = ppParseId(raw); if (!p) return '';
+  if (p.type === 'phone') return `${p.id.slice(0, 3)}-xxx-${p.id.slice(6)}`;
+  return `${p.id.slice(0, 1)}-xxxx-xxxxx-${p.id.slice(-3)}`;
+}
+
+function ppCRC16(s) {
+  let crc = 0xffff;
+  for (let i = 0; i < s.length; i++) {
+    crc ^= s.charCodeAt(i) << 8;
+    for (let j = 0; j < 8; j++) crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+  }
+  return crc.toString(16).toUpperCase().padStart(4, '0');
+}
+const ppTLV = (tag, v) => tag + String(v.length).padStart(2, '0') + v;
+
+/** สร้างข้อความ QR พร้อมเพย์ · amount > 0 = ฝังยอดเงิน */
+function promptPayPayload(raw, amount) {
+  const p = ppParseId(raw);
+  if (!p) throw new Error('รหัสพร้อมเพย์ไม่ถูกต้อง');
+  const target = p.type === 'phone' ? ppTLV('01', ('0000' + '66' + p.id.slice(1)).slice(-13))
+    : p.type === 'nid' ? ppTLV('02', p.id) : ppTLV('03', p.id);
+  const amt = +amount > 0 ? Math.round(+amount * 100) / 100 : 0;
+  const body = ppTLV('00', '01')
+    + ppTLV('01', amt ? '12' : '11')
+    + ppTLV('29', ppTLV('00', 'A000000677010111') + target)
+    + ppTLV('58', 'TH')
+    + ppTLV('53', '764')
+    + (amt ? ppTLV('54', amt.toFixed(2)) : '')
+    + '6304';
+  return body + ppCRC16(body);
+}
+
+/** ตาราง module ของ QR (true = จุดดำ) */
+function qrMatrix(text) {
+  const q = qrcode(0, 'M');
+  q.addData(text); q.make();
+  const n = q.getModuleCount();
+  return { n, dark: (r, c) => q.isDark(r, c) };
+}
+
+/** วาด QR ลงบน canvas context ที่ (x0, y0) ขนาด size px (รวมขอบขาว 4 module) */
+function drawQR(ctx, text, x0, y0, size) {
+  const m = qrMatrix(text), total = m.n + 8, cell = size / total;
+  ctx.save();
+  ctx.fillStyle = '#fff'; ctx.fillRect(x0, y0, size, size);
+  ctx.fillStyle = '#000';
+  for (let r = 0; r < m.n; r++) for (let c = 0; c < m.n; c++) {
+    if (m.dark(r, c)) {
+      const x = Math.floor(x0 + (c + 4) * cell), y = Math.floor(y0 + (r + 4) * cell);
+      ctx.fillRect(x, y, Math.ceil(x0 + (c + 5) * cell) - x, Math.ceil(y0 + (r + 5) * cell) - y);
+    }
+  }
+  ctx.restore();
+}
+
+/** QR เป็น <canvas> สำหรับแสดงบนจอ */
+function qrCanvas(text, size = 260) {
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  const c = document.createElement('canvas');
+  c.width = c.height = Math.round(size * dpr);
+  c.style.width = c.style.height = size + 'px';
+  drawQR(c.getContext('2d'), text, 0, 0, c.width);
+  return c;
+}

@@ -49,9 +49,11 @@ function receiptCanvas(s, W, fs) {
     y += fs * 0.55;
   };
 
+  const unpaid = s.status === 'unpaid';
   center(settings.shopName || 'ร้านค้า', fs * 1.3, true);
-  center(`บิล #${s.no}`, fs * 0.9);
+  center(`${unpaid ? 'ใบแจ้งยอด (ยังไม่ชำระ)' : 'ใบเสร็จ'} · บิล #${s.no}`, fs * 0.9);
   center(new Date(s.createdAt).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }), fs * 0.9);
+  if (s.note) center(`ลูกค้า: ${s.note}`, fs * 0.9);
   hr();
   s.items.forEach(i => {
     lr(`${i.name} (${i.unit})`, '', fs, true);
@@ -63,9 +65,23 @@ function receiptCanvas(s, W, fs) {
   if (s.itemDisc) lr('ส่วนลดรายการ', '-' + money(s.itemDisc));
   if (s.billDisc) lr('ส่วนลดท้ายบิล', '-' + money(s.billDisc));
   y += fs * 0.15;
-  lr('สุทธิ', money(s.total), fs * 1.3, true);
-  lr(s.method === 'cash' ? 'รับเงินสด' : 'โอน / QR', money(s.received));
-  if (s.method === 'cash') lr('เงินทอน', money(s.change));
+  lr(unpaid ? 'ยอดที่ต้องชำระ' : 'สุทธิ', money(s.total), fs * 1.3, true);
+  if (unpaid) {
+    const qt = typeof billQRText === 'function' ? billQRText(s) : '';
+    hr();
+    if (qt) {
+      center('สแกนจ่ายด้วยแอพธนาคาร · พร้อมเพย์', fs * 0.95, true);
+      const q = Math.round(Math.min(inner, W * 0.72));
+      y += fs * 0.2; drawQR(x, qt, Math.round((W - q) / 2), Math.round(y), q); y += q + fs * 0.3;
+      center(`฿${money(s.total)}`, fs * 1.3, true);
+      const who = [settings.ppName, ppMask(settings.ppId)].filter(Boolean).join(' · ');
+      if (who) center(who, fs * 0.9);
+    }
+    if (settings.bankText) center(`${qt ? 'หรือโอนเข้า ' : 'โอนเข้า '}${settings.bankText}`, fs * 0.9);
+  } else {
+    lr(s.method === 'cash' ? 'รับเงินสด' : 'โอน / พร้อมเพย์', money(s.received));
+    if (s.method === 'cash') lr('เงินทอน', money(s.change));
+  }
   hr();
   if (settings.receiptFooter) center(settings.receiptFooter, fs * 0.95);
   y = Math.ceil(y + pad);
@@ -180,16 +196,17 @@ function dataURLtoBlob(u) {
 async function shareReceipt(s) {
   // วาดแบบ sync เพื่อให้ navigator.share ยังอยู่ในจังหวะที่ผู้ใช้กดปุ่ม
   const blob = dataURLtoBlob(receiptCanvas(s, 640, 28).toDataURL('image/png'));
-  const file = new File([blob], `receipt-${s.no}.png`, { type: 'image/png' });
+  const kind = s.status === 'unpaid' ? 'bill' : 'receipt';
+  const file = new File([blob], `${kind}-${s.no}.png`, { type: 'image/png' });
   if (navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: `ใบเสร็จ #${s.no}` }); }
+    try { await navigator.share({ files: [file], title: `${kind === 'bill' ? 'บิล' : 'ใบเสร็จ'} #${s.no}` }); }
     catch (e) { if (e.name !== 'AbortError') toast('แชร์ไม่สำเร็จ: ' + e.message); }
   } else {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = file.name;
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
-    toast('บันทึกรูปใบเสร็จแล้ว ส่งทาง LINE ได้จากคลังรูป', 3500);
+    toast(`บันทึกรูป${kind === 'bill' ? 'บิล' : 'ใบเสร็จ'}แล้ว ส่งทาง LINE ได้จากคลังรูป`, 3500);
   }
 }
 
